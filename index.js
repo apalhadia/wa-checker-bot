@@ -1,6 +1,5 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys')
 const TelegramBot = require('node-telegram-bot-api')
-const qrcode = require('qrcode')
 const pino = require('pino')
 
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
@@ -25,48 +24,29 @@ function isAllowed(userId) {
 }
 
 // ─── WHATSAPP CONNECT ───────────────────────────────────────────────────────
-async function connectWA() {
+async function connectWA(phoneNumber = null) {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER)
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
         browser: ['WA Checker', 'Chrome', '120.0'],
     })
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update
-
-        if (qr && ownerChatId) {
-            try {
-                const qrBuffer = await qrcode.toBuffer(qr, { scale: 8 })
-                await bot.sendPhoto(ownerChatId, qrBuffer, {
-                    caption:
-                        '📱 *Scan QR ini dengan WhatsApp!*\n\n' +
-                        '1. Buka WhatsApp di HP kamu\n' +
-                        '2. Ketuk ⋮ Menu → *Perangkat Tertaut*\n' +
-                        '3. Ketuk *Tautkan Perangkat*\n' +
-                        '4. Scan QR di atas\n\n' +
-                        '⏳ QR berlaku ~60 detik',
-                    parse_mode: 'Markdown',
-                })
-            } catch (e) {
-                console.error('Gagal kirim QR:', e.message)
-            }
-        }
+        const { connection, lastDisconnect } = update
 
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode
             const shouldReconnect = code !== DisconnectReason.loggedOut
             console.log('WA terputus, kode:', code, '| Reconnect:', shouldReconnect)
-
             if (shouldReconnect) {
-                setTimeout(connectWA, 3000)
+                setTimeout(() => connectWA(), 3000)
             } else {
                 isConnected = false
                 if (ownerChatId) {
-                    bot.sendMessage(ownerChatId, '⚠️ WhatsApp logout!\nKetik /connect untuk scan QR lagi.')
+                    bot.sendMessage(ownerChatId, '⚠️ WhatsApp logout!\nKetik /connect untuk pair ulang.')
                 }
             }
         }
@@ -76,7 +56,7 @@ async function connectWA() {
             console.log('✅ WhatsApp terhubung!')
             if (ownerChatId) {
                 bot.sendMessage(ownerChatId,
-                    '✅ *WhatsApp berhasil terhubung!*\n\nBot siap cek nomor. Kirim list nomor untuk mulai.',
+                    '✅ *WhatsApp berhasil terhubung!*\n\nBot siap cek nomor.',
                     { parse_mode: 'Markdown' }
                 )
             }
@@ -85,6 +65,29 @@ async function connectWA() {
 
     sock.ev.on('creds.update', saveCreds)
     waSocket = sock
+
+    // Kalau belum punya session, minta pairing code
+    if (!sock.authState.creds.registered && phoneNumber) {
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+            const code = await sock.requestPairingCode(phoneNumber)
+            if (ownerChatId) {
+                bot.sendMessage(ownerChatId,
+                    `🔑 *Kode Pairing WhatsApp:*\n\n` +
+                    `\`${code}\`\n\n` +
+                    `Masukkan kode ini di WhatsApp:\n` +
+                    `*Settings → Linked Devices → Link with phone number*\n\n` +
+                    `⏳ Kode berlaku beberapa menit`,
+                    { parse_mode: 'Markdown' }
+                )
+            }
+        } catch (e) {
+            console.error('Gagal dapat pairing code:', e.message)
+            if (ownerChatId) {
+                bot.sendMessage(ownerChatId, `❌ Gagal dapat pairing code: ${e.message}`)
+            }
+        }
+    }
 }
 
 // ─── COMMANDS ────────────────────────────────────────────────────────────────
@@ -95,7 +98,7 @@ bot.onText(/\/start/, async (msg) => {
 
     const status = isConnected
         ? '✅ WhatsApp: *Terhubung* — siap cek nomor!'
-        : '❌ WhatsApp: *Belum terhubung*\nKetik /connect untuk scan QR'
+        : '❌ WhatsApp: *Belum terhubung*\nKetik `/connect 628xxxxxxxxxx` untuk pair'
 
     await bot.sendMessage(msg.chat.id,
         `🔍 *WA Checker Bot*\n\n${status}\n\n` +
@@ -105,14 +108,14 @@ bot.onText(/\/start/, async (msg) => {
         `*Hasil:*\n` +
         `✅ = Belum daftar WA → bisa dipakai\n` +
         `❌ = Sudah terdaftar WA\n\n` +
-        `*/connect* — Hubungkan WhatsApp\n` +
+        `*/connect 628xxx* — Hubungkan WhatsApp via kode pairing\n` +
         `*/status* — Cek status koneksi\n` +
         `*/myid* — Lihat Telegram ID kamu`,
         { parse_mode: 'Markdown' }
     )
 })
 
-bot.onText(/\/connect/, async (msg) => {
+bot.onText(/\/connect(?:\s+(\d+))?/, async (msg, match) => {
     if (!isAllowed(msg.from.id)) return
     ownerChatId = msg.chat.id
 
@@ -121,8 +124,22 @@ bot.onText(/\/connect/, async (msg) => {
         return
     }
 
-    await bot.sendMessage(msg.chat.id, '⏳ Menghubungkan ke WhatsApp...\nQR akan dikirim sebentar lagi.')
-    await connectWA()
+    const phone = match[1]
+    if (!phone) {
+        await bot.sendMessage(msg.chat.id,
+            '📱 *Cara pairing WhatsApp:*\n\n' +
+            'Ketik perintah berikut dengan nomor HP kamu:\n' +
+            '`/connect 628xxxxxxxxxx`\n\n' +
+            'Contoh:\n' +
+            '`/connect 6281234567890`\n\n' +
+            '_(gunakan kode negara, tanpa + )_',
+            { parse_mode: 'Markdown' }
+        )
+        return
+    }
+
+    await bot.sendMessage(msg.chat.id, `⏳ Menghubungkan nomor \`+${phone}\`...\nKode pairing akan dikirim sebentar lagi.`, { parse_mode: 'Markdown' })
+    await connectWA(phone)
 })
 
 bot.onText(/\/status/, (msg) => {
