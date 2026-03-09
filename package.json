@@ -1,0 +1,18 @@
+{
+  "name": "wa-checker-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot untuk cek nomor terdaftar WhatsApp atau belum",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "node-telegram-bot-api": "^0.64.0",
+    "qrcode": "^1.5.3",
+    "pino": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
