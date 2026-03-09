@@ -6,8 +6,8 @@ const pino = require('pino')
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const BOT_TOKEN   = process.env.BOT_TOKEN  || 'ISI_BOT_TOKEN'
 const OWNER_ID    = process.env.OWNER_ID   ? Number(process.env.OWNER_ID) : null
-const _allowed    = process.env.ALLOWED_IDS || ''
-const ALLOWED_IDS = _allowed ? _allowed.split(',').map(s => Number(s.trim())).filter(Boolean) : []
+const _whitelist  = process.env.WHITELIST  || ''
+const ALLOWED_IDS = _whitelist ? _whitelist.split(',').map(s => Number(s.trim())).filter(Boolean) : []
 
 const AUTH_FOLDER = './auth_info'
 
