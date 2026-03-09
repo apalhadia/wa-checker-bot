@@ -7,12 +7,12 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.16",
-    "node-telegram-bot-api": "^0.64.0",
-    "qrcode": "^1.5.3",
-    "pino": "^9.0.0"
+    "@whiskeysockets/baileys": "6.7.9",
+    "node-telegram-bot-api": "0.64.0",
+    "qrcode": "1.5.3",
+    "pino": "8.21.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   }
 }
